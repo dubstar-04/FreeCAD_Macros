@@ -1,0 +1,185 @@
+# -*- coding: utf-8 -*-
+
+import FreeCAD, FreeCADGui
+import Draft
+import DraftVecUtils
+
+from PySide import QtGui, QtCore
+from PySide.QtGui import QApplication, QDialog, QMainWindow, QPushButton
+
+import math
+
+dir = os.path.dirname(__file__)
+ui_name = "chassis_tubing.ui"
+path_to_ui = dir + "/" +ui_name
+
+def getSectionsFromGroup(group):
+	""" get the section sketches """
+
+	sections = group.Group
+
+	if not len(sections):
+		print("No sections found, Sections group is empty")
+		return []
+	
+	# print the list of sections as debug
+	for i, section in enumerate(sections):
+		print("Section", i, " - ", section.Label)
+
+	return sections
+
+def getSections():
+	""" check there is a section Group """
+	documentGroupList = FreeCAD.ActiveDocument.findObjects('App::DocumentObjectGroup')
+	
+	#if not len(documentGroupList):
+	#		createSectionGroup()
+
+	if not any(group.Label == "Sections" for group in documentGroupList):
+		createSectionGroup()
+	else:
+		group = FreeCAD.ActiveDocument.getObject('Sections')
+		sections = getSectionsFromGroup(group)
+		return sections
+		
+
+def createSectionGroup():
+	""" Create a sections group """
+	group = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroup","Sections")
+	
+	# add an example circular section	
+	circular_sketch = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', 'Circular-Section-20mm')
+	circular_sketch.addGeometry(Part.Circle(App.Vector(0.000000,0.000000,0),App.Vector(0,0,1),10),False)
+	circular_sketch.addConstraint(Sketcher.Constraint('Coincident',0,3,-1,1)) 
+	circular_sketch.addConstraint(Sketcher.Constraint('Radius',0,10)) 
+	circular_sketch.setDatum(1,App.Units.Quantity('10.000000 mm'))
+
+	# add an example square section	
+	square_section = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', 'Square-Section-20mm')
+	geoList = []
+	geoList.append(Part.LineSegment(App.Vector(-10,10,0),App.Vector(10,10,0)))
+	geoList.append(Part.LineSegment(App.Vector(10,10,0),App.Vector(10,-10,0)))
+	geoList.append(Part.LineSegment(App.Vector(10,-10,0),App.Vector(-10,-10,0)))
+	geoList.append(Part.LineSegment(App.Vector(-10,-10,0),App.Vector(-10,10,0)))
+	square_section.addGeometry(geoList,False)
+	conList = []
+	conList.append(Sketcher.Constraint('Coincident',0,2,1,1))
+	conList.append(Sketcher.Constraint('Coincident',1,2,2,1))
+	conList.append(Sketcher.Constraint('Coincident',2,2,3,1))
+	conList.append(Sketcher.Constraint('Coincident',3,2,0,1))
+	conList.append(Sketcher.Constraint('Horizontal',0))
+	conList.append(Sketcher.Constraint('Horizontal',2))
+	conList.append(Sketcher.Constraint('Vertical',1))
+	conList.append(Sketcher.Constraint('Vertical',3))
+	square_section.addConstraint(conList)
+	square_section.addConstraint(Sketcher.Constraint('Symmetric',0,1,1,2,-1,1)) 
+	square_section.addConstraint(Sketcher.Constraint('Equal',0,1)) 
+	square_section.addConstraint(Sketcher.Constraint('DistanceX',0,1,0,2,20)) 
+	square_section.setDatum(10,App.Units.Quantity('20.000000 mm'))
+
+
+	# add the example sections to the group
+	group.addObject(circular_sketch)
+	group.addObject(square_section)
+	# hide the group so the sections don't show in the 3d view 
+	group.Visibility = False
+
+	App.ActiveDocument.recompute()
+	print("Section Group Created")
+	# call getSectionGroup again to load the new sections		
+	getSections()
+
+def createTube(section_idx):
+	""" create a tube using the selected section and path """
+	sections = getSections()
+	# make a copy of the section
+	section = FreeCAD.ActiveDocument.copyObject(sections[section_idx])
+
+	# get the selected elements
+	sel = FreeCADGui.Selection.getSelectionEx()[0]
+	# make a copy of the selected path
+	path = sel.Object #FreeCAD.ActiveDocument.copyObject(sel.Object)
+	# get a list of edges to convert to tube
+	edges = sel.SubElementNames
+
+	print("Selected:", path.Label, " with edges ", edges)
+
+	#get the startpoint of the edge
+	edge = sel.SubObjects[0]
+	vertex = edge.Vertexes[0]
+
+	#get normal of segment
+	if isinstance(edge.Curve,Part.Circle):
+		n = edge.tangentAt(edge.FirstParameter) # .negative()
+	else:
+		n = (edge.Vertexes[1].Point - edge.Vertexes[0].Point).normalize()
+
+	# get sketch normal
+	vector = FreeCAD.Vector(0,0,1)
+	# get the rotation axis
+	r = vector.cross(n)
+	# calculate the rotation angle in degrees
+	a = DraftVecUtils.angle(n, vector, r) * 180 / math.pi
+	Draft.rotate(section, 0-a, axis=r)
+	# move the section to the start of the tube
+	section.Placement.Base = vertex.Point
+
+	#createTube(section, path, edges)
+	chassisTube = FreeCAD.ActiveDocument.addObject('App::Part','ChassisTube')
+	chassisTube.Label = 'ChassisTube'
+
+	# tube = FreeCAD.ActiveDocument.getObject('Body').newObject('PartDesign::AdditivePipe','Tube')
+	tube =chassisTube.newObject('PartDesign::AdditivePipe','Tube')
+	# path = FreeCAD.ActiveDocument.getObject("Sketch")
+	tube.Profile = section
+	tube.Spine = (path, edges)
+	# tube.Sections = sketchProfile
+	
+	tube.Transition = 'Transformed'
+	tube.Mode = 'Frenet'
+	App.ActiveDocument.recompute()
+
+class TubingPanel:
+    def __init__(self):
+        # self will create a Qt widget from our ui file
+        self.form = FreeCADGui.PySideUic.loadUi(path_to_ui)
+        
+       #Load UI Components
+        self.sectionsComboBox = self.form.sectionsComboBox
+        self.createPB = self.form.createPB
+
+        self.setupUI_()
+
+        #connect
+        self.createPB.clicked.connect(self._createTube)
+
+    
+    def _createTube(self):
+        print("section index:", self.sectionsComboBox.currentIndex())
+        createTube(self.sectionsComboBox.currentIndex())
+
+    def reject(self):
+        FreeCAD.Console.PrintMessage("Reject Signal")
+        self.quit()
+
+    def accept(self):
+        self.quit()
+        
+    def quit(self):
+        FreeCADGui.Control.closeDialog()
+    
+    def setupUI_(self):
+        sections = getSections()
+        for i, section in enumerate(sections):
+            print("Section", i, " - ", section.Label)
+            self.sectionsComboBox.addItem(section.Label)
+
+
+
+panel = TubingPanel()
+
+if FreeCADGui.Control.activeDialog():
+    FreeCAD.Console.PrintMessage("Dialog Panel currently open: Close it?")
+FreeCADGui.Control.showDialog(panel)
+
+
