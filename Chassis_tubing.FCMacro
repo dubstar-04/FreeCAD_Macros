@@ -16,20 +16,18 @@ path_to_ui = dir + "/" +ui_name
 def getSections():
         """ check there is a section Group """
         documentGroupList = FreeCAD.ActiveDocument.findObjects('App::DocumentObjectGroup')
-        # if not len(documentGroupList):
-        #		createSectionGroup()
-        print("Grouplist len:", len(documentGroupList))
 
         if not any(group.Label == "Sections" for group in documentGroupList):
             FreeCAD.Console.PrintWarning("Tubing_Macro: Sections not found, Creating them now\n")      
             createSectionGroup()
-        #else:
+
         group = FreeCAD.ActiveDocument.getObject('Sections')
         sections = group.Group
+
         if not len(sections):
             FreeCAD.Console.PrintError("Tubing_Macro: No sections found, Sections group is empty\n")
             return []
-        #sections = getSectionsFromGroup(group)
+
         return sections
 
 def create_circular_tube(group, size):
@@ -70,6 +68,7 @@ def create_square_tube(group, size):
     square_section.setDatum(10,App.Units.Quantity("{0}mm".format(size)))
     group.addObject(square_section)
 
+
 def createSectionGroup():
     """ Create a sections group """
     group = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroup","Sections")
@@ -84,54 +83,64 @@ def createSectionGroup():
 
 
 def createTube(section_idx):
-	""" create a tube using the selected section and path """
-	sections = getSections()
-	# make a copy of the section
-	section = FreeCAD.ActiveDocument.copyObject(sections[section_idx])
+    """ create a tube using the selected section and path """
 
-	# get the selected elements
-	sel = FreeCADGui.Selection.getSelectionEx()[0]
-	# make a copy of the selected path
-	path = sel.Object #FreeCAD.ActiveDocument.copyObject(sel.Object)
-	# get a list of edges to convert to tube
-	edges = sel.SubElementNames
+    # get the selected elements
+    sel = FreeCADGui.Selection.getSelectionEx()
+    if not len(sel):
+        FreeCAD.Console.PrintWarning("Tubing_Macro: Nothing selected\n")
+        return
 
-	print("Selected:", path.Label, " with edges ", edges)
+    selpath = sel[0]    
+    # make a copy of the selected path
+    path = selpath.Object
+    # get a list of edges to convert to tube
+    edges = selpath.SubElementNames
+    print("Selected:", path.Label, " with edges ", edges)
+    
+    #get the startpoint of the edge
+    edge = selpath.SubObjects[0]
+    vertex = edge.Vertexes[0]
+    #get normal of segment
+    if isinstance(edge.Curve,Part.Circle):
+        n = edge.tangentAt(edge.FirstParameter) # .negative()
+    else:
+        n = (edge.Vertexes[1].Point - edge.Vertexes[0].Point).normalize()
 
-	#get the startpoint of the edge
-	edge = sel.SubObjects[0]
-	vertex = edge.Vertexes[0]
+    parents = path.InListRecursive
+    for parent in parents:
+        if isinstance(parent, App.Part):
+            chassis = parent
 
-	#get normal of segment
-	if isinstance(edge.Curve,Part.Circle):
-		n = edge.tangentAt(edge.FirstParameter) # .negative()
-	else:
-		n = (edge.Vertexes[1].Point - edge.Vertexes[0].Point).normalize()
+    # get list of available sections
+    sections = getSections()
+    
+    # make a copy of the section
+    section = FreeCAD.ActiveDocument.copyObject(sections[section_idx])
 
-	# get sketch normal
-	vector = FreeCAD.Vector(0,0,1)
-	# get the rotation axis
-	r = vector.cross(n)
-	# calculate the rotation angle in degrees
-	a = DraftVecUtils.angle(n, vector, r) * 180 / math.pi
-	Draft.rotate(section, 0-a, axis=r)
-	# move the section to the start of the tube
-	section.Placement.Base = vertex.Point
-
-	#createTube(section, path, edges)
-	chassisTube = FreeCAD.ActiveDocument.addObject('App::Part','ChassisTube')
-	chassisTube.Label = 'ChassisTube'
-
-	# tube = FreeCAD.ActiveDocument.getObject('Body').newObject('PartDesign::AdditivePipe','Tube')
-	tube =chassisTube.newObject('PartDesign::AdditivePipe','Tube')
-	# path = FreeCAD.ActiveDocument.getObject("Sketch")
-	tube.Profile = section
-	tube.Spine = (path, edges)
-	# tube.Sections = sketchProfile
-	
-	tube.Transition = 'Transformed'
-	tube.Mode = 'Frenet'
-	App.ActiveDocument.recompute()
+    try:
+        chassis.addObject(section)
+    except NameError:
+        FreeCAD.ActiveDocument.removeObject(section.Name)
+        FreeCAD.Console.PrintError("Tubing_Macro: Tube must to be created inside a Part Element\n")
+        return
+    
+    # get sketch normal
+    vector = FreeCAD.Vector(0,0,1)
+    # get the rotation axis
+    r = vector.cross(n)
+    # calculate the rotation angle in degrees
+    a = DraftVecUtils.angle(n, vector, r) * 180 / math.pi
+    Draft.rotate(section, 0-a, axis=r)
+    # move the section to the start of the tube
+    section.Placement.Base = vertex.Point
+    # create new tube
+    tube =chassis.newObject('PartDesign::AdditivePipe','Tube')
+    tube.Profile = section
+    tube.Spine = (path, edges)
+    tube.Transition = 'Transformed'
+    tube.Mode = 'Frenet'
+    App.ActiveDocument.recompute()
 
 class TubingPanel:
     def __init__(self):
