@@ -14,34 +14,33 @@ ui_name = "chassis_tubing.ui"
 path_to_ui = dir + "/" +ui_name
 
 def getSectionsFromGroup(group):
-	""" get the section sketches """
+    """ get the section sketches """
+    sections = group.Group
+    if not len(sections):
+        print("No sections found, Sections group is empty")
+        return []
 
-	sections = group.Group
+        # print the list of sections as debug
+        for i, section in enumerate(sections):
+            pass 		
+            #print("Section", i, " - ", section.Label)
 
-	if not len(sections):
-		print("No sections found, Sections group is empty")
-		return []
-	
-	# print the list of sections as debug
-	for i, section in enumerate(sections):
-		print("Section", i, " - ", section.Label)
-
-	return sections
+    return sections
 
 def getSections():
-	""" check there is a section Group """
-	documentGroupList = FreeCAD.ActiveDocument.findObjects('App::DocumentObjectGroup')
-	
-	#if not len(documentGroupList):
-	#		createSectionGroup()
+        """ check there is a section Group """
+        documentGroupList = FreeCAD.ActiveDocument.findObjects('App::DocumentObjectGroup')
+        # if not len(documentGroupList):
+        #		createSectionGroup()
+        print("Grouplist len:", len(documentGroupList))
 
-	if not any(group.Label == "Sections" for group in documentGroupList):
-		createSectionGroup()
-	else:
-		group = FreeCAD.ActiveDocument.getObject('Sections')
-		sections = getSectionsFromGroup(group)
-		return sections
-		
+        if not any(group.Label == "Sections" for group in documentGroupList):
+            print("Sections not found, Create them now")      
+            createSectionGroup()
+        #else:
+        group = FreeCAD.ActiveDocument.getObject('Sections')
+        sections = getSectionsFromGroup(group)
+        return sections
 
 def createSectionGroup():
 	""" Create a sections group """
@@ -87,7 +86,7 @@ def createSectionGroup():
 	App.ActiveDocument.recompute()
 	print("Section Group Created")
 	# call getSectionGroup again to load the new sections		
-	getSections()
+	# getSections()
 
 def createTube(section_idx):
 	""" create a tube using the selected section and path """
@@ -148,7 +147,7 @@ class TubingPanel:
         self.sectionsComboBox = self.form.sectionsComboBox
         self.createPB = self.form.createPB
 
-        self.setupUI_()
+        self.setupUI()
 
         #connect
         self.createPB.clicked.connect(self._createTube)
@@ -168,11 +167,13 @@ class TubingPanel:
     def quit(self):
         FreeCADGui.Control.closeDialog()
     
-    def setupUI_(self):
+    def setupUI(self):
         sections = getSections()
-        for i, section in enumerate(sections):
-            print("Section", i, " - ", section.Label)
-            self.sectionsComboBox.addItem(section.Label)
+
+        if sections:
+            for i, section in enumerate(sections):
+                print("Section", i, " - ", section.Label)
+                self.sectionsComboBox.addItem(section.Label)
 
 
 
