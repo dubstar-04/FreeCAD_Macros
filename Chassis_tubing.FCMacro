@@ -13,20 +13,6 @@ dir = os.path.dirname(__file__)
 ui_name = "chassis_tubing.ui"
 path_to_ui = dir + "/" +ui_name
 
-def getSectionsFromGroup(group):
-    """ get the section sketches """
-    sections = group.Group
-    if not len(sections):
-        print("No sections found, Sections group is empty")
-        return []
-
-        # print the list of sections as debug
-        for i, section in enumerate(sections):
-            pass 		
-            #print("Section", i, " - ", section.Label)
-
-    return sections
-
 def getSections():
         """ check there is a section Group """
         documentGroupList = FreeCAD.ActiveDocument.findObjects('App::DocumentObjectGroup')
@@ -35,58 +21,67 @@ def getSections():
         print("Grouplist len:", len(documentGroupList))
 
         if not any(group.Label == "Sections" for group in documentGroupList):
-            print("Sections not found, Create them now")      
+            FreeCAD.Console.PrintWarning("Tubing_Macro: Sections not found, Creating them now\n")      
             createSectionGroup()
         #else:
         group = FreeCAD.ActiveDocument.getObject('Sections')
-        sections = getSectionsFromGroup(group)
+        sections = group.Group
+        if not len(sections):
+            FreeCAD.Console.PrintError("Tubing_Macro: No sections found, Sections group is empty\n")
+            return []
+        #sections = getSectionsFromGroup(group)
         return sections
 
+def create_circular_tube(group, size):
+    # add an example circular section
+    section_name = "Circular-Section-{0}mm".format(size)
+    radius = size / 2
+    circular_sketch = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', section_name)
+    circular_sketch.addGeometry(Part.Circle(App.Vector(0.000000,0.000000,0),App.Vector(0,0,1),radius),False)
+    circular_sketch.addConstraint(Sketcher.Constraint('Coincident',0,3,-1,1)) 
+    circular_sketch.addConstraint(Sketcher.Constraint('Radius',0,radius)) 
+    circular_sketch.setDatum(1,App.Units.Quantity("{0}mm".format(radius)))
+    group.addObject(circular_sketch)
+
+def create_square_tube(group, size):
+    # add an example square section
+    section_name = "Square-Section-{0}mm".format(size)
+    half_size = size / 2	
+    square_section = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', section_name)
+    geoList = []
+    geoList.append(Part.LineSegment(App.Vector(-half_size,half_size,0),App.Vector(half_size,half_size,0)))
+    geoList.append(Part.LineSegment(App.Vector(half_size,half_size,0),App.Vector(half_size,-half_size,0)))
+    geoList.append(Part.LineSegment(App.Vector(half_size,-half_size,0),App.Vector(-half_size,-half_size,0)))
+    geoList.append(Part.LineSegment(App.Vector(-half_size,-half_size,0),App.Vector(-half_size,half_size,0)))
+    square_section.addGeometry(geoList,False)
+    conList = []
+    conList.append(Sketcher.Constraint('Coincident',0,2,1,1))
+    conList.append(Sketcher.Constraint('Coincident',1,2,2,1))
+    conList.append(Sketcher.Constraint('Coincident',2,2,3,1))
+    conList.append(Sketcher.Constraint('Coincident',3,2,0,1))
+    conList.append(Sketcher.Constraint('Horizontal',0))
+    conList.append(Sketcher.Constraint('Horizontal',2))
+    conList.append(Sketcher.Constraint('Vertical',1))
+    conList.append(Sketcher.Constraint('Vertical',3))
+    square_section.addConstraint(conList)
+    square_section.addConstraint(Sketcher.Constraint('Symmetric',0,1,1,2,-1,1)) 
+    square_section.addConstraint(Sketcher.Constraint('Equal',0,1)) 
+    square_section.addConstraint(Sketcher.Constraint('DistanceX',0,1,0,2,size)) 
+    square_section.setDatum(10,App.Units.Quantity("{0}mm".format(size)))
+    group.addObject(square_section)
+
 def createSectionGroup():
-	""" Create a sections group """
-	group = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroup","Sections")
+    """ Create a sections group """
+    group = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroup","Sections")
+    sizes = [20, 30, 40, 50]
+    for size in sizes:
+        create_circular_tube(group, size)
+        create_square_tube(group, size)
 	
-	# add an example circular section	
-	circular_sketch = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', 'Circular-Section-20mm')
-	circular_sketch.addGeometry(Part.Circle(App.Vector(0.000000,0.000000,0),App.Vector(0,0,1),10),False)
-	circular_sketch.addConstraint(Sketcher.Constraint('Coincident',0,3,-1,1)) 
-	circular_sketch.addConstraint(Sketcher.Constraint('Radius',0,10)) 
-	circular_sketch.setDatum(1,App.Units.Quantity('10.000000 mm'))
+    # hide the group so the sections don't show in the 3d view 
+    group.Visibility = False
+    App.ActiveDocument.recompute()
 
-	# add an example square section	
-	square_section = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', 'Square-Section-20mm')
-	geoList = []
-	geoList.append(Part.LineSegment(App.Vector(-10,10,0),App.Vector(10,10,0)))
-	geoList.append(Part.LineSegment(App.Vector(10,10,0),App.Vector(10,-10,0)))
-	geoList.append(Part.LineSegment(App.Vector(10,-10,0),App.Vector(-10,-10,0)))
-	geoList.append(Part.LineSegment(App.Vector(-10,-10,0),App.Vector(-10,10,0)))
-	square_section.addGeometry(geoList,False)
-	conList = []
-	conList.append(Sketcher.Constraint('Coincident',0,2,1,1))
-	conList.append(Sketcher.Constraint('Coincident',1,2,2,1))
-	conList.append(Sketcher.Constraint('Coincident',2,2,3,1))
-	conList.append(Sketcher.Constraint('Coincident',3,2,0,1))
-	conList.append(Sketcher.Constraint('Horizontal',0))
-	conList.append(Sketcher.Constraint('Horizontal',2))
-	conList.append(Sketcher.Constraint('Vertical',1))
-	conList.append(Sketcher.Constraint('Vertical',3))
-	square_section.addConstraint(conList)
-	square_section.addConstraint(Sketcher.Constraint('Symmetric',0,1,1,2,-1,1)) 
-	square_section.addConstraint(Sketcher.Constraint('Equal',0,1)) 
-	square_section.addConstraint(Sketcher.Constraint('DistanceX',0,1,0,2,20)) 
-	square_section.setDatum(10,App.Units.Quantity('20.000000 mm'))
-
-
-	# add the example sections to the group
-	group.addObject(circular_sketch)
-	group.addObject(square_section)
-	# hide the group so the sections don't show in the 3d view 
-	group.Visibility = False
-
-	App.ActiveDocument.recompute()
-	print("Section Group Created")
-	# call getSectionGroup again to load the new sections		
-	# getSections()
 
 def createTube(section_idx):
 	""" create a tube using the selected section and path """
@@ -154,7 +149,7 @@ class TubingPanel:
 
     
     def _createTube(self):
-        print("section index:", self.sectionsComboBox.currentIndex())
+        """ call the createTube function"""
         createTube(self.sectionsComboBox.currentIndex())
 
     def reject(self):
@@ -174,7 +169,6 @@ class TubingPanel:
             for i, section in enumerate(sections):
                 print("Section", i, " - ", section.Label)
                 self.sectionsComboBox.addItem(section.Label)
-
 
 
 panel = TubingPanel()
